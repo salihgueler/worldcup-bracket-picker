@@ -1,0 +1,8 @@
+dist
+node_modules
+build-temp
+.bb-sandbox
+aws-blocks/client.js
+.bb-data/
+*.log
+.kiro
