@@ -10,3 +10,4 @@ aws-blocks/client.js
 .blocks-sandbox
 cdk.out/
 aws-blocks/blocks.spec.json
+.blocks/
