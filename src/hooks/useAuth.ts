@@ -22,8 +22,8 @@ export function useAuth() {
   }, []);
 
   const signOut = useCallback(async () => {
-    const next = await authApi.setAuthState({ action: "signOut" });
-    broadcastAuthChange(next.user ?? null);
+    await authApi.setAuthState({ action: "signOut" });
+    broadcastAuthChange(null);
   }, []);
 
   return { user, loading, signOut };

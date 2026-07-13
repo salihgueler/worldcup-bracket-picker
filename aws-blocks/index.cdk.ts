@@ -13,7 +13,11 @@ const app = new cdk.App();
 const sandboxMode = app.node.tryGetContext('sandboxMode') === 'true';
 const projectRoot = app.node.tryGetContext('projectRoot') || process.cwd();
 
-const stackName = sandboxMode ? `worldcup-bracket-picker-stack-${getSandboxId(projectRoot)}` : 'worldcup-bracket-picker-stack-prod';
+const sandboxId = getSandboxId(projectRoot);
+const sandboxSuffix = sandboxId.split('-').at(-1) ?? sandboxId;
+const stackName = sandboxMode
+  ? `wcbp-${sandboxSuffix}`
+  : 'worldcup-bracket-picker-stack-prod';
 export const blocksStack = await BlocksStack.create(app, stackName, {
   backendHandlerPath: join(__dirname, 'index.handler.ts'),
   backendCDKPath: join(__dirname, 'index.ts')

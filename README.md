@@ -135,12 +135,12 @@ worldcup-bracket-picker/
 | `DistributedTable` | Teams (with rosters), matches, user picks (DynamoDB) |
 | `KVStore` | Bracket lock state, leaderboard cache |
 | `Realtime` | WebSocket pub/sub for live pick feed |
-| `Agent` | AI predictor with 4 tools (Bedrock Claude Sonnet / Ollama) |
+| `Agent` | AI predictor with 5 tools (Bedrock Claude Sonnet / Ollama) |
 | `CronJob` | Hourly results sync — fetches match outcomes and recalculates leaderboard |
 
 ## How the AI Agent Works
 
-The agent has 4 tools that query the DistributedTable database:
+The agent has 5 tools that query the DistributedTable database and the results feed:
 
 | Tool | Description |
 |------|-------------|
@@ -148,6 +148,7 @@ The agent has 4 tools that query the DistributedTable database:
 | `getTeamSquad` | Full 26-player roster grouped by position. Accepts code or name. |
 | `getMatchConsensus` | Community pick distribution for a match |
 | `getUserBracket` | Current user's group picks, knockout picks, lock status |
+| `getMatchResult` | Actual result and score for a played match, using stored match results with live-feed fallback |
 
 The system prompt instructs the agent to use 3-letter FIFA country codes (USA, BRA, ARG, GER, FRA, ENG, ESP, TUR, MEX, JPN, KOR). If the agent passes a full name instead, the fallback lookup handles it gracefully.
 
@@ -155,7 +156,7 @@ The system prompt instructs the agent to use 3-letter FIFA country codes (USA, B
 
 An hourly CronJob runs during the tournament (June 11 – July 19, 2026) that:
 1. Checks all matches whose scheduled date has passed
-2. Fetches real match results (via sports data API in production)
+2. Fetches real match results from the openfootball World Cup JSON feed
 3. Updates match records in DistributedTable with scores and outcomes
 4. Invalidates the leaderboard cache so points are recalculated
 

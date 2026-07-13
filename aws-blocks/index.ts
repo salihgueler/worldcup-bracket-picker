@@ -626,10 +626,10 @@ const predictor = new Agent(scope, "predictor", {
 // A single global "all" channel carries every user's picks so the live feed
 // shows the whole tournament's activity in real time.
 const PICKS_CHANNEL = "all";
-const rt = new Realtime(scope, "live", {
+const rt = new Realtime(scope, "rt", {
   namespaces: {
     // Broadcast each pick as it happens: who picked which winner for which match.
-    picks: Realtime.namespace(
+    p: Realtime.namespace(
       z.object({
         userId: z.string(),
         username: z.string(),
@@ -797,7 +797,7 @@ export const api = new ApiNamespace(scope, "api", (context) => ({
     await picks.put(pick);
     await leaderboardCache.delete(LEADERBOARD_KEY);
     // Broadcast to the live feed so other connected users see this pick instantly.
-    await rt.publish("picks", PICKS_CHANNEL, {
+    await rt.publish("p", PICKS_CHANNEL, {
       userId: user.userId,
       username: user.username,
       matchId,
@@ -812,7 +812,7 @@ export const api = new ApiNamespace(scope, "api", (context) => ({
    */
   async getPicksChannel() {
     await auth.requireAuth(context);
-    return rt.getChannel("picks", PICKS_CHANNEL);
+    return rt.getChannel("p", PICKS_CHANNEL);
   },
 
   /** All of the current user's picks, sorted by match. */
