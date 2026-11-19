@@ -21,6 +21,13 @@ const realtimeMockMiddleware = require.resolve(
     paths: [blocksPkgDir],
   },
 );
+// The client generated for build/deploy imports the AWS variant instead.
+const realtimeAwsMiddleware = require.resolve(
+  "@aws-blocks/bb-realtime/aws-middleware",
+  {
+    paths: [blocksPkgDir],
+  },
+);
 // The Agent BB persists conversation sessions via FileBucket, so the generated
 // client also imports the file-bucket middleware. Same nesting problem — alias
 // it to its resolved location under @aws-blocks/blocks.
@@ -37,6 +44,7 @@ export default defineConfig({
     conditions: ["browser"],
     alias: {
       "@aws-blocks/bb-realtime/mock-middleware": realtimeMockMiddleware,
+      "@aws-blocks/bb-realtime/aws-middleware": realtimeAwsMiddleware,
       "@aws-blocks/bb-file-bucket/middleware": fileBucketMiddleware,
     },
   },
