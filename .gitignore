@@ -11,3 +11,4 @@ aws-blocks/client.js
 cdk.out/
 aws-blocks/blocks.spec.json
 .blocks/
+.hosting/
