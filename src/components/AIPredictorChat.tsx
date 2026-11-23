@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { api } from "aws-blocks";
+import { api } from "cdk-blocks";
 
 interface ChatMessage {
   id: string;

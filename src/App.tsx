@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { api } from "aws-blocks";
+import { api } from "cdk-blocks";
 import { useAuth } from "./hooks/useAuth";
 import { usePicks } from "./hooks/usePicks";
 import { useRealtime } from "./hooks/useRealtime";

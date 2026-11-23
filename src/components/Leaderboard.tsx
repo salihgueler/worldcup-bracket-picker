@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { api } from "aws-blocks";
+import { api } from "cdk-blocks";
 import { POINTS } from "../data/bracketConstants";
 import { useAuth } from "../hooks/useAuth";
 

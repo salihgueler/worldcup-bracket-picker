@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo } from "react";
-import { api } from "aws-blocks";
+import { api } from "cdk-blocks";
 import type { BracketState } from "../types";
 import {
   GROUPS,

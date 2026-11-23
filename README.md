@@ -9,7 +9,7 @@ Built with React 19, TypeScript, and AWS Blocks — runs locally with zero confi
 | Layer | Technology |
 |-------|-----------|
 | Frontend | React 19, Vite 5, TypeScript, Tailwind CSS 4 |
-| Backend | AWS Blocks (`@aws-blocks/blocks`) |
+| Backend | AWS CDK Blocks (`aws-cdk-blocks`) |
 | Auth | AuthBasic (username/password + JWT sessions) |
 | Data | DistributedTable (teams, matches, picks), KVStore (lock state) |
 | Realtime | Realtime (WebSocket pub/sub for live pick feed) |
@@ -85,7 +85,7 @@ The agent is configured with `model.local` pointing to Ollama's OpenAI-compatibl
 
 ```
 worldcup-bracket-picker/
-├── aws-blocks/
+├── cdk-blocks/
 │   ├── index.ts              # Backend: Blocks + API + Agent
 │   ├── seed-data.ts          # Teams + matches seed data
 │   ├── team-rosters.ts       # 48 team rosters (26 players each)

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
-import { authApi } from "aws-blocks";
-import { onAuthChange, broadcastAuthChange } from "@aws-blocks/blocks/ui";
+import { authApi } from "cdk-blocks";
+import { onAuthChange, broadcastAuthChange } from "aws-cdk-blocks/ui";
 
 export interface AuthUser {
   userId: string;

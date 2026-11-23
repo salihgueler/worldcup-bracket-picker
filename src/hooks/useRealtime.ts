@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api } from "aws-blocks";
+import { api } from "cdk-blocks";
 import type { PickEvent } from "../types";
 
 const MAX_EVENTS = 50;

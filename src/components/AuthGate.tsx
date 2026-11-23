@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ReactNode } from "react";
-import { authApi } from "aws-blocks";
-import { Authenticator } from "@aws-blocks/blocks/ui";
+import { authApi } from "cdk-blocks";
+import { Authenticator } from "aws-cdk-blocks/ui";
 import { useAuth } from "../hooks/useAuth";
 
 /**
