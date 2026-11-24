@@ -1,8 +1,8 @@
 /**
- * Backend — aws-blocks/index.ts
+ * Backend — cdk-blocks/index.ts
  *
  * This file defines your API, auth, data model, and real-time channels.
- * The frontend imports these exports directly via `import { ... } from 'aws-blocks'`.
+ * The frontend imports these exports directly via `import { ... } from 'cdk-blocks'`.
  *
  * ─── IMPORTANT ───────────────────────────────────────────────────────────────
  * Do NOT use local files, in-memory arrays, or local databases for persistence.
@@ -10,21 +10,21 @@
  * They work locally with automatic mocks and deploy to AWS with zero configuration.
  *
  * For the full list of blocks and how to use them, see:
- *   node_modules/@aws-blocks/blocks/README.md
+ *   node_modules/aws-cdk-blocks/README.md
  * ─────────────────────────────────────────────────────────────────────────────
  */
 import {
   ApiNamespace,
   Scope,
-  AuthBasic,
-  DistributedTable,
+  Auth,
   KVStore,
+  LegacyKVStore,
   Realtime,
   Agent,
   BedrockModels,
   OllamaModels,
   CronJob,
-} from "@aws-blocks/blocks";
+} from "aws-cdk-blocks";
 import { z } from "zod";
 import { SEED_TEAMS, SEED_MATCHES } from "./seed-data.js";
 import { POINTS } from "../src/data/bracketConstants.js";
@@ -32,9 +32,17 @@ import { POINTS } from "../src/data/bracketConstants.js";
 const scope = new Scope("my-app");
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
-const auth = new AuthBasic(scope, "auth", {
-  passwordPolicy: { minLength: 8 },
-  crossDomain: process.env.BLOCKS_SANDBOX === "true",
+// Auth replaces AuthBasic. Existing users must sign up again after the deploy;
+// sign-up now confirms the email with a code. The password policy and session
+// lifetime keep AuthBasic's values.
+const auth = new Auth(scope, "auth", {
+  emailPassword: {
+    passwordPolicy: { minLength: 8, requireUppercase: false, requireLowercase: false, requireDigits: false, requireSymbols: false },
+  },
+  session: {
+    crossDomain: process.env.BLOCKS_SANDBOX === "true",
+    ttlSeconds: 86_400,
+  },
 });
 export const authApi = auth.createApi();
 
@@ -52,7 +60,7 @@ const teamSchema = z.object({
   roster: z.string().optional(), // optional JSON-encoded roster
 });
 
-const teams = new DistributedTable(scope, "teams", {
+const teams = new KVStore(scope, "teams", {
   schema: teamSchema,
   key: { partitionKey: "type", sortKey: "teamId" },
   indexes: {
@@ -73,7 +81,7 @@ const matchSchema = z.object({
   score: z.string().optional(),
 });
 
-const matches = new DistributedTable(scope, "matches", {
+const matches = new KVStore(scope, "matches", {
   schema: matchSchema,
   key: { partitionKey: "matchType", sortKey: "matchId" },
   indexes: {
@@ -98,7 +106,7 @@ const pickSchema = z.object({
   createdAt: z.number(),
 });
 
-const picks = new DistributedTable(scope, "picks", {
+const picks = new KVStore(scope, "picks", {
   schema: pickSchema,
   key: { partitionKey: "oddsType", sortKey: "oddsId" },
   indexes: {
@@ -111,7 +119,11 @@ const picks = new DistributedTable(scope, "picks", {
 
 // ─── Key-Value State ───────────────────────────────────────────────────────
 // Per-user bracket lock flag. Once locked, picks can no longer change.
-const lockStore = new KVStore<boolean>(scope, "bracket-lock");
+// Release 0.x stored this table as `{ pk, value }`, which `KVStore` cannot take
+// over in place. `LegacyKVStore` keeps that table (same id and options) readable;
+// new writes go to `bracket-lock-v2` and reads fall back to the old table.
+const legacyLockStore = new LegacyKVStore<boolean>(scope, "bracket-lock");
+const lockStore = new KVStore<boolean>(scope, "bracket-lock-v2");
 
 // Cached leaderboard standings. Computing standings scans every pick, so the
 // result is cached here and served until invalidated by a new pick.
@@ -122,18 +134,53 @@ const leaderboardSchema = z.array(
     picks: z.number(),
   }),
 );
-const leaderboardCache = new KVStore(scope, "leaderboard-cache", {
-  schema: leaderboardSchema,
-});
+type LeaderboardStandings = z.infer<typeof leaderboardSchema>;
+// The old `leaderboard-cache` table (release 0.x format) is dropped from the
+// stack; production retains it. The cache is recomputed on demand.
+const leaderboardCache = new KVStore<LeaderboardStandings>(
+  scope,
+  "leaderboard-cache-v2",
+);
 const LEADERBOARD_KEY = "standings";
 
 // One persistent predictor conversation per user, so the AI chat keeps
 // multi-turn context across messages. Maps username → conversationId.
-const predictorConversations = new KVStore<string>(scope, "predictor-chat");
+const legacyPredictorConversations = new LegacyKVStore<string>(
+  scope,
+  "predictor-chat",
+);
+const predictorConversations = new KVStore<string>(scope, "predictor-chat-v2");
 
 const lockKey = (userId: string) => `lock:${userId}`;
 const pickId = (userId: string, matchId: string) => `${userId}#${matchId}`;
 const chatKey = (userId: string) => `chat:${userId}`;
+
+/** A bracket lock, read from the new store and then the legacy 0.x table. */
+async function isBracketLocked(userId: string): Promise<boolean> {
+  const key = lockKey(userId);
+  return (
+    (await lockStore.get(key)) === true ||
+    (await legacyLockStore.get(key)) === true
+  );
+}
+
+/** A user's predictor conversation id, from the new store or the legacy table. */
+async function getPredictorConversation(userId: string) {
+  const key = chatKey(userId);
+  return (
+    (await predictorConversations.get(key)) ??
+    (await legacyPredictorConversations.get(key))
+  );
+}
+
+/** Collect the values of a `KVStore` query or scan. */
+async function valuesOf<V>(
+  results: AsyncIterable<{ value: V }>,
+): Promise<V[]> {
+  const out: V[] = [];
+  for await (const { value } of results) out.push(value);
+  return out;
+}
 
 /** Write items in DynamoDB-sized batches (25 per request). */
 async function seedInBatches<I>(
@@ -191,7 +238,7 @@ interface FinishedFeedMatch {
  * than throwing, so callers degrade gracefully.
  */
 async function fetchFinishedFeedMatches(): Promise<FinishedFeedMatch[]> {
-  const allTeams = await Array.fromAsync(
+  const allTeams = await valuesOf(
     teams.query({ where: { type: { equals: "TEAM" } } }),
   );
   const idByName = new Map<string, string>();
@@ -235,7 +282,7 @@ async function syncMatchResultsFromFeed() {
     feedResults.set(matchKey(m.date, m.id1, m.id2), m);
   }
 
-  const allMatches = await Array.fromAsync(
+  const allMatches = await valuesOf(
     matches.query({ where: { matchType: { equals: "MATCH" } } }),
   );
   const now = Date.now();
@@ -265,7 +312,10 @@ async function syncMatchResultsFromFeed() {
       match.team2Id,
       feedMatch.ft,
     );
-    await matches.put({ ...match, result, score });
+    await matches.put(
+      { matchType: match.matchType, matchId: match.matchId },
+      { ...match, result, score },
+    );
     updated++;
     console.log(
       `[results-sync] resolved ${match.matchId} → ${result} (${score})`,
@@ -308,7 +358,7 @@ function pointsForStage(stage: string): number {
  * (highest first), tie-broken by number of picks.
  */
 async function computeLeaderboard() {
-  const allMatches = await Array.fromAsync(
+  const allMatches = await valuesOf(
     matches.query({ where: { matchType: { equals: "MATCH" } } }),
   );
   const resolved = new Map<string, { result: string; stage: string }>();
@@ -316,7 +366,7 @@ async function computeLeaderboard() {
     if (m.result) resolved.set(m.matchId, { result: m.result, stage: m.stage });
   }
 
-  const allPicks = await Array.fromAsync(
+  const allPicks = await valuesOf(
     picks.query({ where: { oddsType: { equals: PICK_TYPE } } }),
   );
   const byUser = new Map<string, { score: number; picks: number }>();
@@ -412,7 +462,7 @@ const predictor = new Agent(scope, "predictor", {
         });
         const direct = await teams.get({ type: "TEAM", teamId: input.teamId });
         if (direct) return toJson(direct);
-        const all = await Array.fromAsync(
+        const all = await valuesOf(
           teams.query({ where: { type: { equals: "TEAM" } } }),
         );
         const needle = input.teamId.trim().toLowerCase();
@@ -471,7 +521,7 @@ const predictor = new Agent(scope, "predictor", {
       }),
       needsApproval: false,
       handler: async ({ input }) => {
-        const matchPicks = await Array.fromAsync(
+        const matchPicks = await valuesOf(
           picks.query({
             index: "byMatch",
             where: { matchId: { equals: input.matchId } },
@@ -500,7 +550,7 @@ const predictor = new Agent(scope, "predictor", {
       parameters: z.object({}),
       needsApproval: false,
       handler: async ({ context: toolContext }) => {
-        const myPicks = await Array.fromAsync(
+        const myPicks = await valuesOf(
           picks.query({
             index: "byUser",
             where: { userId: { equals: toolContext.userId } },
@@ -548,7 +598,7 @@ const predictor = new Agent(scope, "predictor", {
             note?: string;
           }
       > => {
-        const allTeams = await Array.fromAsync(
+        const allTeams = await valuesOf(
           teams.query({ where: { type: { equals: "TEAM" } } }),
         );
         const nameById = new Map(allTeams.map((t) => [t.teamId, t.name]));
@@ -585,7 +635,7 @@ const predictor = new Agent(scope, "predictor", {
         });
 
         // Prefer a result already stored on the match.
-        const allMatches = await Array.fromAsync(
+        const allMatches = await valuesOf(
           matches.query({ where: { matchType: { equals: "MATCH" } } }),
         );
         const stored = allMatches.find(
@@ -670,20 +720,20 @@ export const api = new ApiNamespace(scope, "api", (context) => ({
    */
   async ensureSeeded() {
     await auth.requireAuth(context);
-    const existing = await Array.fromAsync(
+    const existing = await valuesOf(
       teams.query({ where: { type: { equals: "TEAM" } }, limit: 1 }),
     );
     if (existing.length > 0) {
       // Teams already seeded. An earlier version seeded them without squads,
       // so backfill rosters if they're missing (putBatch upserts in place).
       if (!existing[0].roster) {
-        await seedInBatches((items) => teams.putBatch(items), SEED_TEAMS);
+        await seedInBatches((items) => teams.putBatch(items.map((value) => ({ key: { type: value.type, teamId: value.teamId }, value }))), SEED_TEAMS);
         return { seeded: false, teams: SEED_TEAMS.length, matches: 0 };
       }
       return { seeded: false, teams: 0, matches: 0 };
     }
-    await seedInBatches((items) => teams.putBatch(items), SEED_TEAMS);
-    await seedInBatches((items) => matches.putBatch(items), SEED_MATCHES);
+    await seedInBatches((items) => teams.putBatch(items.map((value) => ({ key: { type: value.type, teamId: value.teamId }, value }))), SEED_TEAMS);
+    await seedInBatches((items) => matches.putBatch(items.map((value) => ({ key: { matchType: value.matchType, matchId: value.matchId }, value }))), SEED_MATCHES);
     return {
       seeded: true,
       teams: SEED_TEAMS.length,
@@ -695,11 +745,11 @@ export const api = new ApiNamespace(scope, "api", (context) => ({
   async listTeams(group?: string) {
     await auth.requireAuth(context);
     if (group) {
-      return await Array.fromAsync(
+      return await valuesOf(
         teams.query({ index: "byGroup", where: { group: { equals: group } } }),
       );
     }
-    return await Array.fromAsync(
+    return await valuesOf(
       teams.query({ where: { type: { equals: "TEAM" } } }),
     );
   },
@@ -708,14 +758,14 @@ export const api = new ApiNamespace(scope, "api", (context) => ({
   async listMatches(stage?: string) {
     await auth.requireAuth(context);
     if (stage) {
-      return await Array.fromAsync(
+      return await valuesOf(
         matches.query({
           index: "byStage",
           where: { stage: { equals: stage } },
         }),
       );
     }
-    return await Array.fromAsync(
+    return await valuesOf(
       matches.query({ where: { matchType: { equals: "MATCH" } } }),
     );
   },
@@ -729,9 +779,7 @@ export const api = new ApiNamespace(scope, "api", (context) => ({
    */
   async chatWithPredictor(message: string) {
     const user = await auth.requireAuth(context);
-    let conversationId = await predictorConversations.get(
-      chatKey(user.username),
-    );
+    let conversationId = await getPredictorConversation(user.username);
     if (!conversationId) {
       conversationId = await predictor.createConversationId(user.username);
       await predictorConversations.put(chatKey(user.username), conversationId);
@@ -778,7 +826,7 @@ export const api = new ApiNamespace(scope, "api", (context) => ({
     confidence?: number,
   ) {
     const user = await auth.requireAuth(context);
-    if (await lockStore.get(lockKey(user.username))) {
+    if (await isBracketLocked(user.username)) {
       throw new Error("Bracket is locked — picks can no longer be changed");
     }
     const existing = await picks.get({
@@ -794,7 +842,7 @@ export const api = new ApiNamespace(scope, "api", (context) => ({
       confidence,
       createdAt: existing?.createdAt ?? Date.now(),
     };
-    await picks.put(pick);
+    await picks.put({ oddsType: pick.oddsType, oddsId: pick.oddsId }, pick);
     await leaderboardCache.delete(LEADERBOARD_KEY);
     // Broadcast to the live feed so other connected users see this pick instantly.
     await rt.publish("p", PICKS_CHANNEL, {
@@ -818,7 +866,7 @@ export const api = new ApiNamespace(scope, "api", (context) => ({
   /** All of the current user's picks, sorted by match. */
   async getMyPicks() {
     const user = await auth.requireAuth(context);
-    return await Array.fromAsync(
+    return await valuesOf(
       picks.query({
         index: "byUser",
         where: { userId: { equals: user.username } },
@@ -829,7 +877,7 @@ export const api = new ApiNamespace(scope, "api", (context) => ({
   /** Every user's pick for a single match (for live odds / standings). */
   async getPicksForMatch(matchId: string) {
     await auth.requireAuth(context);
-    return await Array.fromAsync(
+    return await valuesOf(
       picks.query({
         index: "byMatch",
         where: { matchId: { equals: matchId } },
@@ -849,7 +897,7 @@ export const api = new ApiNamespace(scope, "api", (context) => ({
   /** Whether the current user's bracket is locked. */
   async isLocked() {
     const user = await auth.requireAuth(context);
-    return { locked: (await lockStore.get(lockKey(user.username))) === true };
+    return { locked: await isBracketLocked(user.username) };
   },
 
   // ─── Leaderboard Cache ─────────────────────────────────────────────────────
@@ -892,7 +940,10 @@ export const api = new ApiNamespace(scope, "api", (context) => ({
     await auth.requireAuth(context);
     const match = await matches.get({ matchType: "MATCH", matchId });
     if (!match) throw new Error(`Match not found: ${matchId}`);
-    await matches.put({ ...match, result, score });
+    await matches.put(
+      { matchType: match.matchType, matchId: match.matchId },
+      { ...match, result, score },
+    );
     const standings = await refreshLeaderboard();
     return { matchId, result, score, leaderboard: standings.length };
   },

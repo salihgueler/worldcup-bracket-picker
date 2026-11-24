@@ -2,13 +2,16 @@ dist
 node_modules
 build-temp
 .bb-sandbox
-aws-blocks/client.js
+cdk-blocks/client.js
 .bb-data/
 *.log
 .kiro
 # AWS Blocks
-.blocks-sandbox
+.cdk-blocks-sandbox
 cdk.out/
-aws-blocks/blocks.spec.json
-.blocks/
+cdk-blocks/blocks.spec.json
+.cdk-blocks/*
+!.cdk-blocks/config.json
 .hosting/
+.blocks/
+.blocks-sandbox

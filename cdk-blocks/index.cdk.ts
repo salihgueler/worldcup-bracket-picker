@@ -1,10 +1,10 @@
 import * as cdk from 'aws-cdk-lib';
 import { RemovalPolicies, Mixins } from 'aws-cdk-lib';
 
-import { Hosting, BlocksStack, BlocksPresets, SandboxDisableDeletionProtection, registerConfig } from '@aws-blocks/blocks/cdk';
+import { Hosting, BlocksStack, BlocksPresets, SandboxDisableDeletionProtection, registerConfig } from 'aws-cdk-blocks/cdk';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { getSandboxId } from './scripts/sandbox-id.js';
+import { getSandboxId } from 'aws-cdk-blocks/scripts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 

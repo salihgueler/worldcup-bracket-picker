@@ -1,4 +1,4 @@
-import { api } from "aws-blocks";
+import { api } from "cdk-blocks";
 
 // Basic smoke test — verifies the API is typed and reachable
 async function main() {
