@@ -157,10 +157,18 @@ The system prompt instructs the agent to use 3-letter FIFA country codes (USA, B
 An hourly CronJob runs during the tournament (June 11 – July 19, 2026) that:
 1. Checks all matches whose scheduled date has passed
 2. Fetches real match results from the openfootball World Cup JSON feed
-3. Updates match records in DistributedTable with scores and outcomes
+3. Updates match records with scores and outcomes
 4. Invalidates the leaderboard cache so points are recalculated
 
-A manual `api.updateMatchResult(matchId, result, score)` endpoint is also available for entering results directly (useful for testing or if the API is down).
+A manual `api.updateMatchResult(matchId, result, score)` endpoint is also available for entering results directly (useful for testing or if the API is down). It, and `api.cacheLeaderboard`, only accept callers in the `admin` group. Add your account once after signing up:
+
+```sh
+# Local pool: stop the dev server first, start it again afterwards.
+npx @aws-cdk-blocks/bb-auth users add-to-group you@example.com admin
+
+# Deployed pool: prints what it would do first; add --yes to apply.
+npx @aws-cdk-blocks/bb-auth users add-to-group you@example.com admin --stage prod
+```
 
 ## Points System
 

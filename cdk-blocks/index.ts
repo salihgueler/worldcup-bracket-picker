@@ -36,6 +36,10 @@ const scope = new Scope("my-app");
 // sign-up now confirms the email with a code. The password policy and session
 // lifetime keep AuthBasic's values.
 const auth = new Auth(scope, "auth", {
+  // `admin` gates the methods that change match results or the stored
+  // leaderboard. Add yourself once with
+  // `npx @aws-cdk-blocks/bb-auth users add-to-group <you> admin` (see README).
+  users: { groups: ["admin"] },
   emailPassword: {
     passwordPolicy: { minLength: 8, requireUppercase: false, requireLowercase: false, requireDigits: false, requireSymbols: false },
   },
@@ -908,11 +912,14 @@ export const api = new ApiNamespace(scope, "api", (context) => ({
     return await leaderboardCache.get(LEADERBOARD_KEY);
   },
 
-  /** Store computed leaderboard standings in the cache. */
+  /**
+   * Store computed leaderboard standings in the cache. Admin only: the cache is
+   * what every player sees, so a caller-supplied list would replace the scores.
+   */
   async cacheLeaderboard(
     standings: { userId: string; score: number; picks: number }[],
   ) {
-    await auth.requireAuth(context);
+    await auth.requireRole(context, "admin");
     await leaderboardCache.put(LEADERBOARD_KEY, standings);
     return { cached: standings.length };
   },
@@ -937,7 +944,8 @@ export const api = new ApiNamespace(scope, "api", (context) => ({
    * refreshes the cached leaderboard so standings reflect the new result.
    */
   async updateMatchResult(matchId: string, result: string, score: string) {
-    await auth.requireAuth(context);
+    // Admin only: a result decides every player's score.
+    await auth.requireRole(context, "admin");
     const match = await matches.get({ matchType: "MATCH", matchId });
     if (!match) throw new Error(`Match not found: ${matchId}`);
     await matches.put(
